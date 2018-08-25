@@ -7,7 +7,7 @@ import copy, json, os, signal, socket
 from collections import namedtuple
 from itertools import product
 from Xlib import display, X
-from Xlib.keysymdef import miscellany
+from Xlib.keysymdef import latin1, miscellany
 
 try:
     # Create singleton using abstract socket (prefix with null)
@@ -49,6 +49,19 @@ class PyGrid(object):
         miscellany.XK_KP_7: {'name':'topleft',     'filter':lambda s: s.x1 == 0.0 and s.y1 == 0.0},
         miscellany.XK_KP_8: {'name':'top',         'filter':lambda s: s.y1 == 0.0 and _center(s.x1,s.x2)},
         miscellany.XK_KP_9: {'name':'topright',    'filter':lambda s: s.x2 == 1.0 and s.y1 == 0.0},
+
+        latin1.XK_N:        {'name':'bottomleft',  'filter':lambda s: s.x1 == 0.0 and s.y2 == 1.0},
+        latin1.XK_M:        {'name':'bottom',      'filter':lambda s: s.y2 == 1.0 and _center(s.x1,s.x2)},
+        latin1.XK_comma:    {'name':'bottomright', 'filter':lambda s: s.x2 == 1.0 and s.y2 == 1.0},
+        latin1.XK_H:        {'name':'left',        'filter':lambda s: s.x1 == 0.0 and _center(s.y1,s.y2)},
+        latin1.XK_J:        {'name':'middle',      'filter':lambda s: _center(s.x1,s.x2) and _center(s.y1,s.y2)},
+        latin1.XK_K:        {'name':'right',       'filter':lambda s: s.x2 == 1.0 and _center(s.y1,s.y2)},
+        latin1.XK_Y:        {'name':'topleft',     'filter':lambda s: s.x1 == 0.0 and s.y1 == 0.0},
+        latin1.XK_U:        {'name':'top',         'filter':lambda s: s.y1 == 0.0 and _center(s.x1,s.x2)},
+        latin1.XK_I:        {'name':'topright',    'filter':lambda s: s.x2 == 1.0 and s.y1 == 0.0},
+
+        miscellany.XK_KP_Enter: {'name':'cycle-monitor'},
+        latin1.XK_L:            {'name':'cycle-monitor'},
     }
 
     def __init__(self):
@@ -62,8 +75,9 @@ class PyGrid(object):
         self.root.change_attributes(event_mask=X.KeyPressMask)
         self.keys = {self.display.keysym_to_keycode(k):v for k,v in self.KEYS.items()}
         for keycode in self.keys:
-            self.root.grab_key(keycode, X.ControlMask | X.Mod1Mask, 1, X.GrabModeAsync, X.GrabModeAsync)
-            self.root.grab_key(keycode, X.ControlMask | X.Mod1Mask | X.Mod2Mask, 1, X.GrabModeAsync, X.GrabModeAsync)
+            # self.root.grab_key(keycode, X.ControlMask | X.Mod1Mask, 1, X.GrabModeAsync, X.GrabModeAsync)
+            # self.root.grab_key(keycode, X.ControlMask | X.Mod1Mask | X.Mod2Mask, 1, X.GrabModeAsync, X.GrabModeAsync)
+            self.root.grab_key(keycode, X.ControlMask | X.Mod2Mask | X.Mod4Mask, 1, X.GrabModeAsync, X.GrabModeAsync)
         for event in range(0, self.root.display.pending_events()):
             self.root.display.next_event()
         GObject.io_add_watch(self.root.display, GObject.IO_IN, self._check_event)
@@ -85,6 +99,11 @@ class PyGrid(object):
             screen = Gdk.Screen.get_default()
             window = self._get_active_window(screen)
             if not window: return
+
+            if keypos['name'] == 'cycle-monitor':
+                self._cycle_monitor(screen, window)
+                return
+
             if self._get_config()['snaptocursor']:
                 cursor = screen.get_display().get_default_seat().get_pointer().get_position()
                 monitorid = screen.get_monitor_at_point(cursor.x, cursor.y)
@@ -194,6 +213,24 @@ class PyGrid(object):
         window.set_shadow_width(0,0,0,0)
         window.move_resize(seq.x1, seq.y1, seq.w-(offx*2), seq.h-(offx+offy))
 
+    def _cycle_monitor(self, screen, window):
+        monitor_id = screen.get_monitor_at_window(window)
+        new_monitor_id = (monitor_id + 1) % Gdk.Screen.get_n_monitors(screen)
+
+        monitor_geom = Gdk.Screen.get_monitor_geometry(screen, monitor_id)
+        new_monitor_geom = Gdk.Screen.get_monitor_geometry(screen, new_monitor_id)
+        print('Moving window to monitor %s, which has geometry: %sx%s %sx%s' % (new_monitor_id,
+            new_monitor_geom.x, new_monitor_geom.y,
+            new_monitor_geom.width, new_monitor_geom.height))
+
+        window_geom = window.get_frame_extents()
+
+        window.move_resize(
+            window_geom.x - monitor_geom.x + new_monitor_geom.x,
+            window_geom.y - monitor_geom.y + new_monitor_geom.y,
+            window_geom.width,
+            window_geom.height
+        )
 
 def _center(p1, p2):
     return round(1.0 - p2, 4) == p1
